@@ -1,0 +1,21 @@
+:: SGD Test
+::-m SGD  -d CIFAR10 -e 1000 -n ResNet -g 1 -l 0.01
+::
+:: QSGD Test 
+::-m QSGD  -d CIFAR10 -e 1000 -n ResNet -g 1 -l 0.01
+::
+:: SGD Test
+::
+:: Adam Test
+::-m Adam  -d CIFAR10 -e 200 -n ResNet -g 1 -l 0.01
+::-m NAdam -d CIFAR10 -e 200 -n ResNet -g 1 -l 0.01
+::-m RAdam -d CIFAR10 -e 200 -n ResNet -g 1 -l 0.01
+::-m AdamW -d CIFAR10 -e 200 -n ResNet -g 1 -l 0.01
+::-m ASGD  -d CIFAR10 -e 200 -n ResNet -g 1 -l 0.01
+:: 
+::FashionMNIST Test
+::-m SGD   -d FashionMNIST -e 200 -n ResNet -g 1 -l 0.01
+::-m Adam  -d FashionMNIST -e 200 -n ResNet -g 1 -l 0.02
+::
+:: Algorithm Test-2  ResNet-20 --num_resnet_layers 3 /5 (Default:32) /7
+-m QSGD  -d CIFAR10 -e 1 -n ResNet -g 1 -l 0.01 --num_resnet_layers 7

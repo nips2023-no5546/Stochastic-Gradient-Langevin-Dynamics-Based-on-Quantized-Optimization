@@ -1,0 +1,18 @@
+operation_class:
+   result_yaml_file: 'merged_YAML_file.yaml'
+
+plot_graph:
+   fig_size_x: 13
+   fig_size_y: 6
+   graph_file: 'result_graph.png'
+   graph_dpi: 300
+
+send_notify:
+   sendEmail: "*****@******"            # Write out your e-mail accordance with your smtp sever
+   recvEmail: "*****@******"            # Write out your e-mail address receiving notification mail		
+   identification: "**************"     # For use etri smtp server
+   password: "*************"            # 
+   smtpName: "****.****.**.**"          # smtp Server Address e.g. "smtp.google.com"
+   smtpPort: 465                        # smtp Port Number e.g. 587
+   head_msg: "[Notify] Test work Finish"
+   etri_mail: True

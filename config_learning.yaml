@@ -1,0 +1,9 @@
+scheduler_param:
+   num_of_upwards: 4.0
+   CosineAnnealingWarmRestarts: 
+      T_0: 10
+      T_mult: 2
+      eta_min_param: 0.1        # eta_min = args.learning_rate * eta_min_param
+   CustomCosineAnnealingWarmRestarts:
+      T_up: 1
+      gamma: 0.95

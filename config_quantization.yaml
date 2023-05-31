@@ -1,0 +1,9 @@
+Q_process:
+  bQuantization: true
+Quantization:
+  base: 2
+  debug: false
+  eta: 524288.0
+  kappa: 2.0
+  test: false
+  warmp_up_period: 0.2
