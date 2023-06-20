@@ -24,7 +24,9 @@ from Read_Data import MNIST_set
 from Read_Data import CIFAR10_set
 from Read_Data import CIFAR100_set
 from Read_Data import FashionMNIST_set
-#from torch.utils.tensorboard import SummaryWriter
+from Read_Data import ImageNet_set
+
+from torch.utils.tensorboard import SummaryWriter
 
 #-------------------------------------------------------------
 # Description of CNN, LeNet, ResNet
@@ -36,6 +38,7 @@ from torch_SmallNet import LeNet
 from torch_resnet import ResNet as resnet_base
 from torch_resnet import ResidualBlock
 import torch_resnet as resnet_service
+from torch_vgg import VGG
 
 from service_process_board import process_data_storage
 from service_process_board import send_notify
@@ -85,32 +88,15 @@ def Check_modelName(args):
         DBG.dbg("Please Check the Model Name !!!")
         exit()
 
-def Set_Model_Processing(args, device, Dset):
+def Get_Network_Name(args):
     if args.data_set == 'MNIST' or args.data_set == 'FashionMNIST':
-        model   = CNN(inputCH=Dset.inputCH, outCH=Dset.outputCH).to(device)
+        _net_name = 'CNN'
+    elif args.data_set == 'ImageNet':
+        _net_name = args.vgg_arch
     else:
-        if args.net_name == 'ResNet':
-            model  = ResNet(inputCH=Dset.inputCH, outCH=Dset.outputCH, num_layers=args.num_resnet_layers).to(device)
-        else:
-            model  = LeNet(inputCH=Dset.inputCH, outCH=Dset.outputCH).to(device)
-    return model
+        _net_name = args.net_name
 
-def Set_Data_Processing(args, device):
-    if args.data_set == 'MNIST':
-        Dset    = MNIST_set(batch_size=args.batch_size, bdownload=True)
-    elif args.data_set == 'FashionMNIST':
-        Dset    = FashionMNIST_set(batch_size=args.batch_size, bdownload=True)
-    elif args.data_set == 'CIFAR10':
-        Dset    = CIFAR10_set(batch_size=args.batch_size, bdownload=True)
-    elif args.data_set == 'CIFAR100':
-        Dset    = CIFAR100_set(batch_size=args.batch_size, bdownload=True)
-    else:
-        Dset = None
-        DBG.dbg("Data set is not assigned !! It is Error!!!")
-        exit()
-
-    return Dset
-
+    return _net_name
 # --------------------------------------------------------
 # Parsing the Argument : parser.parse_args(['--sum', '7', '-1', '42'])
 # --------------------------------------------------------
@@ -162,6 +148,14 @@ def _ArgumentParse(_intro_msg, L_Param, bUseParam=False):
                         type=str, default="work_win01.bat")
     parser.add_argument('-lp', '--LrnParam', help="Learning Parameter, which is read from the config_learning.yaml file (default=0)",
                         type=int, default=0)
+    parser.add_argument('-an', '--analysis_level', help="Analysis Level [(-1)] No analysis [0] One Epoch Analysis",
+                        type=int, default=-1)
+    parser.add_argument('-sw', '--summary_writer', help="Summary Writer [0] No Summary Writer [1] Summary-Writer of Tensorboard is active",
+                        type=int, default=1)
+
+    ## For VGG
+    parser.add_argument('-vgg_ar', '--vgg_arch', help="Architecture of VGG : 'VGG11', 'VGG13', 'VGG16', 'VGG19' (default='VGG19')",
+                        type=str, default='VGG19')
 
     # Use Parameters (True) or default Argument (False)
     if bUseParam:
@@ -169,10 +163,10 @@ def _ArgumentParse(_intro_msg, L_Param, bUseParam=False):
     else:
         args = parser.parse_args()
 
-    args.batch_size = 128 if args.data_set == 'CIFAR10' else 100
+    args.batch_size = 128 if args.data_set == 'CIFAR10' else args.batch_size
     args.autoproc   = True if args.autoproc == 1 else False
     args.batchproc  = True if args.batchproc == 1 else False
-    args.net_name   = 'CNN' if args.data_set == 'MNIST' or args.data_set == 'FashionMNIST' else args.net_name
+    args.net_name   = Get_Network_Name(args=args)
     args.proc_index_name = args.net_name + '_' \
                          + args.model_name + '_' \
                          + args.scheduler_name + '_' \
@@ -189,6 +183,9 @@ def _ArgumentParse(_intro_msg, L_Param, bUseParam=False):
     args.QParam     = cy.read_yaml_file(_yaml_file_name=cy.get_config_file_name(_category='quantization'))
     args.LrnParam   = cy.read_yaml_file(_yaml_file_name=cy.get_config_file_name(_category='learning'))
 
+    # Set SummaryWriter for Tensorboard
+    args.summary_writer = SummaryWriter() if args.summary_writer ==1 else args.summary_writer
+
     if os.path.exists(args.result_directory):
         print("There exists the path for result files %s " %(args.result_directory))
     else:
@@ -204,19 +201,23 @@ def _ArgumentParse(_intro_msg, L_Param, bUseParam=False):
 from torch_learning import learning_module
 
 class op_class:
-    def __init__(self, L_Param, bUseParam=False):
+    def __init__(self, L_Param, b_multiproc=False, bUseParam=False):
         # Set Test Processing
-        self._args = _ArgumentParse(_description, L_Param, bUseParam)
-        self._device = 'cuda' if self._args.device == 1 and torch.cuda.is_available() else 'cpu'
-        # Set Data Processing
-        self.Dset   = Set_Data_Processing(self._args, self._device)
-        self.model  = Set_Model_Processing(self._args,self._device, self.Dset)
+        self._args      = _ArgumentParse(_description, L_Param, bUseParam) if b_multiproc else L_Param
+        #self._args      = _ArgumentParse(_description, L_Param, bUseParam)
+        self._device    = 'cuda' if self._args.device == 1 and torch.cuda.is_available() else 'cpu'
+        self.GPU_DEVICE = torch.device(self._device)
+        #print(torch.cuda.memory_summary(self.GPU_DEVICE))
+        # Set Data Processing : Some data parameters depending on LoadingData ...
+        self.Dset       = self.Set_Data_Processing(self._args, self._device)
+        self.LoadingData= self.Dset.data_loader(bTrain=True, bsuffle=False)
+        self.model      = self.Set_Model_Processing(self._args,self._device, self.Dset)
 
         # Set Operation
         self._args.model_file_name   = 'torch_nn02_' + self._args.proc_index_name + '.pt'
         self._error_trend_file       = 'error_' + self._args.proc_index_name + '.pickle'
 
-        self.LoadingData     = self.Dset.data_loader(bTrain=True, bsuffle=False)
+        # Set Learning Parameter
         self._total_batch    = len(self.LoadingData)
         self.criterion       = torch.nn.CrossEntropyLoss()
         self.optimizer       = learning_module(model=self.model, args=self._args, total_batch=self._total_batch)
@@ -229,13 +230,51 @@ class op_class:
                                self._args.model_name == 'QtAdam'
         # Data recording
         self._data_recorder  = process_data_storage()
-
         # Final Processing in Initialization
         self.print_and_record_learning_parameters()
-
         # Evaluation
         self.load_model()
+        # Analysis Level
+        self.b_analysis     = True if self._args.analysis_level > -1 else False
+        self.writer         = self._args.summary_writer
+    # --------------------------------------------------------
+    # Service functions for __init__
+    # --------------------------------------------------------
+    def Set_Model_Processing(self, args, device, Dset):
+        if args.data_set == 'MNIST' or args.data_set == 'FashionMNIST':
+            model = CNN(inputCH=Dset.inputCH, outCH=Dset.outputCH).to(device)
+        elif args.data_set == 'ImageNet':
+            model = VGG(architecture=VGG.get_VGG_architecture(args.vgg_arch),
+                        in_channels=Dset.inputCH, num_classes=Dset.outputCH,
+                        in_height=Dset.height, in_width=Dset.width).to(device)
+        else:
+            if args.net_name == 'ResNet':
+                model = ResNet(inputCH=Dset.inputCH, outCH=Dset.outputCH, num_layers=args.num_resnet_layers).to(device)
+            else:
+                model = LeNet(inputCH=Dset.inputCH, outCH=Dset.outputCH).to(device)
+        return model
 
+    def Set_Data_Processing(self, args, device):
+        if args.data_set == 'MNIST':
+            Dset = MNIST_set(batch_size=args.batch_size, bdownload=True)
+        elif args.data_set == 'FashionMNIST':
+            Dset = FashionMNIST_set(batch_size=args.batch_size, bdownload=True)
+        elif args.data_set == 'CIFAR10':
+            Dset = CIFAR10_set(batch_size=args.batch_size, bdownload=True)
+        elif args.data_set == 'CIFAR100':
+            Dset = CIFAR100_set(batch_size=args.batch_size, bdownload=True)
+        elif args.data_set == 'ImageNet':
+            Dset = ImageNet_set(batch_size=args.batch_size, bdownload=False)
+        else:
+            Dset = None
+            DBG.dbg("Data set is not assigned !! It is Error!!!")
+            exit()
+
+        return Dset
+
+    # --------------------------------------------------------
+    # Service functions for Print and Record
+    # --------------------------------------------------------
     def print_and_record_learning_parameters(self, b_print=True):
         _sprint("Information of Operation :")
         _sprint("   Data Set              : %s" %(self._args.data_set), b_print=b_print)
@@ -260,6 +299,12 @@ class op_class:
 
         if self._args.net_name == 'ResNet':
             _sprint("   ResNet num. of Layers : %d" % (self.model.total_layers), b_print=b_print)
+
+        if self._device == 'cuda' and self._args.analysis_level > 1:
+            _sprint("Information of GPU Status :")
+            _sprint(torch.cuda.memory_summary(self.GPU_DEVICE))
+
+        _sprint("-----------------------------------------------------------------", b_print=b_print)
         _sprint("\n")
 
     # --------------------------------------------------------
@@ -280,7 +325,7 @@ class op_class:
                 _cost.backward()
 
                 # Debug --------------------------------------------------------------
-                self.optimizer.Set_cost_info(_cost=_cost, _avg_cost=_avg_cost)
+                self.optimizer.Set_cost_info(_cost=_cost, _avg_cost=_avg_cost, b_active=self.b_Qalgorithm)
                 # Debug --------------------------------------------------------------
 
                 # Learning : 해당 함수를 살펴 본다.
@@ -294,10 +339,11 @@ class op_class:
             self.optimizer.scheduler.step()
 
             # Record the Average Cost
-            self.writing_learning_result_per_epoch(_avg_cost, epoch)
+            self.writing_learning_result_per_epoch(epoch, _avg_cost)
 
         self._Learning_time = time.time() - _start_time
-        #writer.flush()
+        # Data in Buffer to Tensorboard
+        self.writer.flush()
 
     # --------------------------------------------------------
     # Test
@@ -340,13 +386,19 @@ class op_class:
     # --------------------------------------------------------
     # Final Stage
     # --------------------------------------------------------
-    def writing_learning_result_per_epoch(self, _avg_cost, epoch):
+    def writing_learning_result_per_epoch(self, epoch, _avg_cost):
         _learning_rate = self.optimizer.get_optimizer_parameter(_param='lr')
         self._data_recorder.write_data_on_board(_avg_cost, _learning_rate)
 
-        _sprint("[Epoch : %4d] cost = %f   LR = %f" % (epoch, _avg_cost, _learning_rate))
+        _msg_data   = ("[Epoch : %4d] cost = %f   " %(epoch, _avg_cost))
+        if self.b_Qalgorithm:
+            _msg_data += ("QP Index: %2.3f  sup_QP: %2.3f " % (self.c_opt.Q_proc.Get_QPIndex(), self.c_opt.Q_proc.Get_supQP()))
+        else:
+            _msg_data += ("LR = %f" % (_learning_rate))
 
-        #writer.add_scalar("Loss/train", _avg_cost, epoch)
+        _sprint(_msg_data)
+        # record the data to the buffer
+        self.writer.add_scalar("Loss/train", _avg_cost, epoch)
         #writer.add_scalar("Learning Rate", _learning_rate, epoch)
 
     def _final(self):
@@ -391,7 +443,10 @@ class op_class:
                 DBG.dbg("There is not any proper model file in this directory. \n Please, copy an appropriate model file here.")
                 print("Process abnormally finish")
                 exit()
-        else : return
+        else :
+            print("This Processing is learning. Not evaluation. Learning is just started!!")
+            print("-----------------------------------------------------------------")
+        return
 
     def evaluation_final(self, b_print=True):
         #self._current_path = os.getcwd()
@@ -441,7 +496,7 @@ def clean_result_directory(result_dirName ="result" ):
     os.chdir(curr_dir)
     print("Clean the result directory : ", result_directory )
 
-def multiple_training(s_arg_data="argdata.dat", b_UseParam=True):
+def multiple_training(s_arg_data="argdata.dat", b_multiproc=True, b_UseParam=True):
     clean_result_directory()
     with open(s_arg_data, 'rt') as f:
         for _k, _line in enumerate(f.readlines()):
@@ -454,7 +509,7 @@ def multiple_training(s_arg_data="argdata.dat", b_UseParam=True):
                     DBG.dbg("Check the file for this error", _active=True)
                     exit()
                 else:
-                    params = training(_operation_param, bUseParam=b_UseParam)
+                    params  = training(_operation_param, b_multiproc=b_multiproc, bUseParam=b_UseParam)
             else: pass
 
     return params
@@ -462,39 +517,36 @@ def multiple_training(s_arg_data="argdata.dat", b_UseParam=True):
 # =============================================================
 # Test Processing
 # =============================================================
-def training(L_Param, bUseParam=False):
-    c_op = op_class(L_Param=L_Param, bUseParam=bUseParam)
+def training(L_Param, b_multiproc=False, bUseParam=False):
+    c_op = op_class(L_Param=L_Param, b_multiproc=b_multiproc, bUseParam=bUseParam)
     c_op._learning()
     c_op._test_processing()
     params = c_op._final()
     return params
 
-def evaluation(L_Param, bUseParam=False):
-    c_op = op_class(L_Param=L_Param, bUseParam=bUseParam)
+def evaluation(L_Param, b_multiproc=False, bUseParam=False):
+    c_op = op_class(L_Param=L_Param, b_multiproc=b_multiproc, bUseParam=bUseParam)
     c_op._test_processing()
     params = c_op.evaluation_final()
     return params
 
 if __name__ == "__main__":
-    _operation_param    = []
-    _args               = _ArgumentParse(_intro_msg='', L_Param=_operation_param)
+    _args               = _ArgumentParse(_intro_msg=_description, L_Param=[])
     b_FundamentalUse    = not _args.batchproc # True ... Single Learning
     _arg_data_file      = _args.arg_data_file
     _noti_target_file   = _args.noti_target_file if b_FundamentalUse else _arg_data_file
-    #writer              = SummaryWriter()
 
     if b_FundamentalUse:
-        params = training(_operation_param)
+        params = training(_args, bUseParam=True)
     else:
         params = multiple_training(s_arg_data=_arg_data_file)
-
-    #writer.close()
 
     print("-----------------------------------------------------------------")
     try:
         generate_notify(_target_file=_noti_target_file)
     except Exception as e:
         DBG.dbg("Noti Error : ", e)
+    _args.summary_writer.close()
     print("=============================================================")
     print("Process Finished!!")
     print("=============================================================")

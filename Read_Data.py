@@ -238,25 +238,28 @@ class ImageNet_set:
         self.classes    = self.get_ImageNet_Label()
         self.download_imagenet()
 
+        print("1. Set Transform Compose")
         self.transform  = transforms.Compose(
                         [transforms.Resize(256),
                         transforms.CenterCrop(224),
                         transforms.ToTensor(),
                         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
+        print("2. Set Training data of Imagenet")
         self.trainset   = dsets.ImageNet(root=self.datadir,
-                                        train=True,
                                         transform=self.transform,
-                                        split='val',
-                                        download=bdownload)
+                                        split='train')
+
+        print("3. Set Validation data of Imagenet")
         self.testset    = dsets.ImageNet(root=self.datadir,
-                                        train=False,
                                         transform=self.transform,
-                                        split='val',
-                                        download=bdownload)
+                                        split='val')
+
         self.inputCH     = 3
-        self.datashape   = self.trainset.data.shape
         self.outputCH    = len(self.trainset.classes)
+        self.datashape   = [self.batchsize, self.inputCH, 224, 224]
+        self.width       = 224
+        self.height      = 224
 
     # Train 경우 shuffle True, Test 경우 False 추천
     def data_loader(self, bTrain, bsuffle, bdrop_last=True):
@@ -266,6 +269,11 @@ class ImageNet_set:
                                                   shuffle=bsuffle,
                                                   num_workers=2,
                                                   drop_last=bdrop_last)
+
+        self.datashape  = self.get_Dimension_of_data(loadingData)
+        self.width      = self.datashape[2]
+        self.height     = self.datashape[3]
+
         return loadingData
 
     def Test_Function(self, model, _device, ClassChk=False, bTrain=False ):
@@ -301,6 +309,15 @@ class ImageNet_set:
 
         return labels
 
+    def get_Dimension_of_data(self, loadingData):
+        _k = 0; _datashape = -1
+        for _X, _Y in loadingData:
+            if _k == 0:
+                _datashape  = _X.shape
+            else: break
+            _k += 1
+        return _datashape
+
     def download_imagenet(self):
         """
         download_imagenet validation set
@@ -315,7 +332,7 @@ class ImageNet_set:
         _ImageNetdevkitFileName = "ILSVRC2012_devkit_t12.tar.gz"
         root = self.ImageNetDatadir
 
-        if os.path.isfile(_ImageNetDataFileName) and os.path.isfile(_ImageNetdevkitFileName):
+        if os.path.isfile(os.path.join(root,_ImageNetDataFileName)) and os.path.isfile(os.path.join(root,_ImageNetdevkitFileName)):
             print("There exists %s and %s in %s " %(_ImageNetDataFileName, _ImageNetdevkitFileName, root))
         else:
             print("Download...")
@@ -445,16 +462,25 @@ if __name__ == "__main__":
         print("Data set is not depicted. It is error!!!")
         exit()
 
+    print("Shape of Data Set     : ", Dset.datashape)
+    print("  Width               : ", Dset.width)
+    print("  Height              : ", Dset.height)
+    print("Number of Classes     : ", Dset.outputCH)
     print("Total number of batch : ", len(LoadingData))
 
     # K : The index of Batch : max K = number of batch
+    # For ImageNet Test : OK code
+    '''
     K = 0
     for X, Y in LoadingData:
         if K == 0:
             print("Data <dim> : ", X.shape)
             print("Label<dim> : ", Y.shape)
-        K+= 1
-
+        else:
+            if K % 100 == 0:
+                print("%d " %K, end='\r')
+        K += 1
+    '''
     #=============================================================
     # Final Stage
     #=============================================================

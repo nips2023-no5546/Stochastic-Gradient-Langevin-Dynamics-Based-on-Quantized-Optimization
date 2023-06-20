@@ -50,6 +50,7 @@ class Quantization:
         self.r_data         = torch.tensor(0)
         self._cost          = torch.tensor(0)
         self._avg_cost      = torch.tensor(0)
+        self._minval        = torch.tensor(1.0e-32)
 
         # Set Initial QP
         self.eval_QP(torch.tensor(0))
@@ -72,6 +73,10 @@ class Quantization:
         _res = torch.log(_x)/torch.log(self.q_base)
         return _res
 
+    def check_nan_from_Tensor(self, _data):
+        _chk_isnan  = torch.isnan(_data)
+        _ret        = True if _chk_isnan.cpu().detach().numpy().any() else False
+        return _ret
     # -------------------------------------------------------------
     # Main Processing Function
     # -------------------------------------------------------------
@@ -106,20 +111,32 @@ class Quantization:
 
     # Time unit for r_function is Epoch unit
     def r_function(self, _h, _lr, _te):
-        # Normalized search vector
-        _v      = torch.div(_h, torch.norm(_h))
-        # -1.0 * self._kappa * (_te - self._tau_0)
-        _powv   = torch.mul(-1.0, torch.mul(self._kappa, torch.sub(_te, self._tau_0)))
-        # tanh(x)+1 = 2 exp(x)/(1+exp(x))
-        if self._test:
-            _expv = torch.exp(_powv)
-            _res1 = torch.div(_expv, torch.add(1.0, _expv))
+        if self._debug:
+            _chk_debug = False
+            # Normalized search vector
+            _nh     = torch.norm(_h)
+            if _nh == 0:
+                print("begin debug")
+            _v      = torch.div(_h, _nh) if _nh > 0 else torch.mul(_h, 0)
+            # -1.0 * self._kappa * (_te - self._tau_0)
+            _powv   = torch.mul(-1.0, torch.mul(self._kappa, torch.sub(_te, self._tau_0)))
+            # tanh(x)+1 = 2 exp(x)/(1+exp(x))
+            if self._test:
+                _expv = torch.exp(_powv)
+                _res1 = torch.div(_expv, torch.add(1.0, _expv))
+            else:
+                _tanh   = torch.add(torch.tanh(_powv), 1.0)
+                _res1   = torch.mul(0.5, _tanh)
+            # lr * exp(x)/(1+exp(x)) * v
+            _res2   = torch.mul(_lr, _v)
+            _res    = torch.mul(_res1, _res2)
         else:
+            _nh     = torch.norm(_h)
+            _v      = torch.div(_h, _nh) if _nh > 0 else torch.mul(_h, 0)
+            _powv   = torch.mul(-1.0, torch.mul(self._kappa, torch.sub(_te, self._tau_0)))
             _tanh   = torch.add(torch.tanh(_powv), 1.0)
-            _res1   = _tanh if self._test else torch.mul(0.5, _tanh)
-        # lr * exp(x)/(1+exp(x)) * v
-        _res2   = torch.mul(_lr, _v)
-        _res    = torch.mul(_res1, _res2)
+            _res1   = torch.mul(0.5, _tanh)
+            _res    = torch.mul(_res1, torch.mul(_lr, _v))
         return _res
     # _h = \lambda * h(x_t), _lr : Learning_rate, _tau : minibatch unit
     def get_Quantization(self, _h, _lr, _tau):

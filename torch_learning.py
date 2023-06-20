@@ -527,6 +527,8 @@ class learning_module:
 
 
     # Debug --------------------------------------------------------------
-    def Set_cost_info(self, _cost, _avg_cost):
-        self.optimizer.Q_proc.set_cost(_cost=_cost, _avg_cost=_avg_cost)
+    def Set_cost_info(self, _cost, _avg_cost, b_active=False):
+        if b_active:
+            self.optimizer.Q_proc.set_cost(_cost=_cost, _avg_cost=_avg_cost)
+        else: return
     # Debug --------------------------------------------------------------
