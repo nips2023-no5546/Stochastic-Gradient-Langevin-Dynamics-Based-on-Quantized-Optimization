@@ -4,12 +4,12 @@
 # Pytorch - Definition of VGG19
 # Working Directory :
 # VGG 19
-# 2023 06 08 by Jinseuk Seok
+# 2023 06 08 by ******* ****
 ###########################################################################
 _description = '''\
 ====================================================
 torch_vgg.py : Based on torch module
-                    Written by Jinwuk @ 2023-06-08
+                    Written by ****** @ 2023-06-08
 ====================================================
 Example : This python file is not executable
 '''

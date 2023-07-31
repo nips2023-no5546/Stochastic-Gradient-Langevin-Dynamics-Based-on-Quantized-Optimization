@@ -1,0 +1,16 @@
+# Usage : conda install requirements_test.txt -c conda-forge -c pytorch -c nvidia -c jmcmurray
+# Channel : conda-forge, pytorch, nvidia, jmcmurray
+json==0.1.1
+pyyaml==6.0
+scipy==1.9.3
+scikit-learn==1.2.0
+matplotlib==3.6.2
+tensorboard==2.10.0
+pytorch==1.13.1
+torchvision==0.14.1
+torchaudio==0.13.1
+pytorch-cuda=11.7
+
+#cudatoolkit=11.7
+#wget=3.2=pypi_0
+
